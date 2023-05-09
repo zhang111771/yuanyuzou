@@ -16,17 +16,15 @@ import { Capsule } from "three/examples/jsm/math/Capsule.js";
 import { GUI } from "three/examples/jsm/libs/lil-gui.module.min.js";
 
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { LightningStorm } from "three/examples/jsm/objects/LightningStorm.js";
 
 import { reactive, onMounted, ref } from "vue";
-import fragmentShader from "./shader/fragmentShader.glsl";
 
 onMounted(() => {
   const clock = new THREE.Clock();
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x88ccee);
-  // scene.fog = new THREE.Fog(0x88ccee, 0, 50);
+  scene.fog = new THREE.Fog(0x88ccee, 0, 50);
 
   const camera = new THREE.PerspectiveCamera(
     70,
@@ -34,7 +32,7 @@ onMounted(() => {
     0.001,
     1000
   );
-  camera.position.set(0, 0, 50);
+  camera.position.set(0, 5, 10);
 
   const container = document.getElementById("container");
 
@@ -52,111 +50,255 @@ onMounted(() => {
   stats.domElement.style.top = "0px";
   container.appendChild(stats.domElement);
 
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 0, 0);
-
-  console.log(renderer.info);
+  // const controls = new OrbitControls(camera, renderer.domElement);
+  // controls.target.set(0, 0, 0);
 
   function animate() {
     let delta = clock.getDelta();
-    planeMaterial.uniforms.iTime.value += delta;
+    // console.log(delta);
+    controlPlayer(delta);
+    updatePlayer(delta);
+    resetPlayer();
     stats.update();
-    controls.update();
-    storm.update(delta);
+    // controls.update();
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
   }
 
   // 创建一个平面
   const planeGeometry = new THREE.PlaneGeometry(20, 20, 1, 1);
-  const planeMaterial1 = new THREE.MeshBasicMaterial({
+  const planeMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     side: THREE.DoubleSide,
   });
-  const plane2 = new THREE.Mesh(planeGeometry, planeMaterial1);
-  plane2.rotation.x = -Math.PI / 2;
-  scene.add(plane2);
+  const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+  plane.receiveShadow = true;
+  plane.rotation.x = -Math.PI / 2;
 
-  const planeMaterial = new THREE.ShaderMaterial({
-    uniforms: {
-      iTime: { value: 0 },
-      iMouse: { value: new THREE.Vector2(0, 0) },
-      iResolution: {
-        value: new THREE.Vector2(1000, 1000),
-      },
-      rotation: { value: 0 },
-    },
-    vertexShader: `
-    varying vec2 vUv;
-    uniform float rotation;
-      void main() {
-        vUv = uv;
-        vec4 mvPosition = modelViewMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
-	      vec2 scale;
-        scale.x = length( vec3( modelMatrix[ 0 ].x, modelMatrix[ 0 ].y, modelMatrix[ 0 ].z ) );
-	      scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) );
-        scale *= - mvPosition.z;
-        vec2 alignedPosition = -position.xy * scale / mvPosition.z;
-        vec2 rotatedPosition;
-        rotatedPosition.x = cos( rotation ) * alignedPosition.x - sin( rotation ) * alignedPosition.y;
-        rotatedPosition.y = sin( rotation ) * alignedPosition.x + cos( rotation ) * alignedPosition.y;
-        mvPosition.xy += rotatedPosition;
-        gl_Position = projectionMatrix * mvPosition;
+  // 创建立方体叠楼梯的效果
+  for (let i = 0; i < 10; i++) {
+    const boxGeometry = new THREE.BoxGeometry(1, 1, 0.15);
+    const boxMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const box = new THREE.Mesh(boxGeometry, boxMaterial);
+    box.position.y = 0.15 + i * 0.15;
+    box.position.z = i * 0.3;
+    plane.add(box);
+  }
 
-        // vec4 viewPosition = viewMatrix * modelMatrix *vec4(position,1);
-        // gl_Position = projectionMatrix * viewPosition;
-        // gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1);
-      }
-    `,
-    fragmentShader: fragmentShader,
-    side: THREE.DoubleSide,
-    transparent: true,
-    depthWrite: false,
-    // depthTest: false,
-    blending: THREE.AdditiveBlending,
-  });
+  // 创建一个octree
 
-  // const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-  // plane.receiveShadow = true;
-  // scene.add(plane);
+  const group = new THREE.Group();
+  group.add(plane);
+  scene.add(group);
+  const worldOctree = new Octree();
+  worldOctree.fromGraphNode(group);
 
-  // 创建一个精灵
-  const sprite = new THREE.Sprite(planeMaterial);
-  sprite.renderOrder = 1;
-  // sprite.scale.set(1, 1);
-  sprite.position.set(0, 1, 0);
-  scene.add(sprite);
+  // 创建一个octreeHelper
+  // const octreeHelper = new OctreeHelper(worldOctree);
+  // scene.add(octreeHelper);
 
-  // 创建一个精灵
-  const sprite2 = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: new THREE.TextureLoader().load("./textures/women.png"),
-      color: 0xffffff,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      depthTest: false,
-    })
+  // 创建一个人的碰撞体
+  const playerCollider = new Capsule(
+    new THREE.Vector3(0, 0.35, 0),
+    new THREE.Vector3(0, 1.35, 0),
+    0.35
   );
-  // scene.add(sprite2);
-  sprite2.position.y = 1;
-  sprite2.material.onBeforeCompile = (shader) => {
-    console.log(shader.fragmentShader);
-    console.log(shader.vertexShader);
-  };
-  console.log(sprite2);
-  const storm = new LightningStorm({
-    size: 100,
-    minHeight: 90,
-    maxHeight: 200,
-    maxSlope: 0.6,
-    maxLightnings: 8,
 
-    onLightningDown: function (lightning) {
-      console.log("lightning down", lightning);
-    },
+  console.log(playerCollider.getCenter(new THREE.Vector3()));
+  console.log(worldOctree);
+
+  // 创建一个平面
+  const capsuleBodyGeometry = new THREE.PlaneGeometry(1, 0.5, 1, 1);
+  const capsuleBodyMaterial = new THREE.MeshBasicMaterial({
+    color: 0x0000ff,
+    side: THREE.DoubleSide,
   });
-  scene.add(storm);
+  const capsuleBody = new THREE.Mesh(capsuleBodyGeometry, capsuleBodyMaterial);
+  capsuleBody.position.set(0, 0.5, 0);
+  // 创建一个胶囊物体
+  const capsuleGeometry = new THREE.CapsuleGeometry(0.35, 1, 32);
+  const capsuleMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    side: THREE.DoubleSide,
+  });
+  const capsule = new THREE.Mesh(capsuleGeometry, capsuleMaterial);
+  capsule.position.set(0, 0.85, 0);
+
+  // 将相机作为胶囊的子元素，就可以实现跟随
+  camera.position.set(0, 2, -5);
+  camera.lookAt(capsule.position);
+  // controls.target = capsule.position;
+  capsule.add(camera);
+  capsule.add(capsuleBody);
+
+  scene.add(capsule);
+
+  // 设置重力
+  const gravity = -9.8;
+  // 玩家的速度
+  const playerVelocity = new THREE.Vector3(0, 0, 0);
+  // 方向向量
+  const playerDirection = new THREE.Vector3(0, 0, 0);
+  // 键盘按下事件
+  const keyStates = {
+    KeyW: false,
+    KeyA: false,
+    KeyS: false,
+    KeyD: false,
+    Space: false,
+    isDown: false,
+  };
+
+  // 玩家是否在地面上
+  let playerOnFloor = false;
+
+  function updatePlayer(deltaTime) {
+    let damping = -0.05;
+    if (playerOnFloor) {
+      playerVelocity.y = 0;
+
+      keyStates.isDown ||
+        playerVelocity.addScaledVector(playerVelocity, damping);
+    } else {
+      playerVelocity.y += gravity * deltaTime;
+    }
+
+    // console.log(playerVelocity);
+    // 计算玩家移动的距离
+    const playerMoveDistance = playerVelocity.clone().multiplyScalar(deltaTime);
+    playerCollider.translate(playerMoveDistance);
+    // 将胶囊的位置进行设置
+    playerCollider.getCenter(capsule.position);
+
+    // 进行碰撞检测
+    playerCollisions();
+  }
+
+  function playerCollisions() {
+    // 人物碰撞检测
+    const result = worldOctree.capsuleIntersect(playerCollider);
+    // console.log(result);
+    playerOnFloor = false;
+    if (result) {
+      playerOnFloor = result.normal.y > 0;
+      playerCollider.translate(result.normal.multiplyScalar(result.depth));
+    }
+  }
+
+  function resetPlayer() {
+    if (capsule.position.y < -20) {
+      playerCollider.start.set(0, 2.35, 0);
+      playerCollider.end.set(0, 3.35, 0);
+      playerCollider.radius = 0.35;
+      playerVelocity.set(0, 0, 0);
+      playerDirection.set(0, 0, 0);
+    }
+  }
+
+  // 根据键盘按下的键来更新键盘的状态
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      console.log(event.code);
+      keyStates[event.code] = true;
+      keyStates.isDown = true;
+    },
+    false
+  );
+  document.addEventListener(
+    "keyup",
+    (event) => {
+      keyStates[event.code] = false;
+      keyStates.isDown = false;
+    },
+    false
+  );
+  document.addEventListener(
+    "mousedown",
+    (event) => {
+      // 锁定鼠标指针
+      document.body.requestPointerLock();
+    },
+    false
+  );
+
+  // 根据键盘状态更新玩家的速度
+  function controlPlayer(deltaTime) {
+    if (keyStates["KeyW"]) {
+      playerDirection.z = 1;
+      //获取胶囊的正前面方向
+      const capsuleFront = new THREE.Vector3(0, 0, 0);
+      capsule.getWorldDirection(capsuleFront);
+      // console.log(capsuleFront);
+      // 计算玩家的速度
+      playerVelocity.add(capsuleFront.multiplyScalar(deltaTime));
+    }
+    if (keyStates["KeyS"]) {
+      playerDirection.z = 1;
+      //获取胶囊的正前面方向
+      const capsuleFront = new THREE.Vector3(0, 0, 0);
+      capsule.getWorldDirection(capsuleFront);
+      // console.log(capsuleFront);
+      // 计算玩家的速度
+      playerVelocity.add(capsuleFront.multiplyScalar(-deltaTime));
+    }
+    if (keyStates["KeyA"]) {
+      playerDirection.x = 1;
+      //获取胶囊的正前面方向
+      const capsuleFront = new THREE.Vector3(0, 0, 0);
+      capsule.getWorldDirection(capsuleFront);
+
+      // 侧方的方向，正前面的方向和胶囊的正上方求叉积，求出侧方的方向
+      capsuleFront.cross(capsule.up);
+      // console.log(capsuleFront);
+      // 计算玩家的速度
+      playerVelocity.add(capsuleFront.multiplyScalar(-deltaTime));
+    }
+    if (keyStates["KeyD"]) {
+      playerDirection.x = 1;
+      //获取胶囊的正前面方向
+      const capsuleFront = new THREE.Vector3(0, 0, 0);
+      capsule.getWorldDirection(capsuleFront);
+
+      // 侧方的方向，正前面的方向和胶囊的正上方求叉积，求出侧方的方向
+      capsuleFront.cross(capsule.up);
+      // console.log(capsuleFront);
+      // 计算玩家的速度
+      playerVelocity.add(capsuleFront.multiplyScalar(deltaTime));
+    }
+    if (keyStates["Space"]) {
+      playerVelocity.y = 15;
+    }
+  }
+
+  // 根据鼠标在屏幕移动，来旋转胶囊
+  window.addEventListener(
+    "mousemove",
+    (event) => {
+      capsule.rotation.y -= event.movementX * 0.003;
+    },
+    false
+  );
+
+  // 多层次细节展示
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    wireframe: true,
+  });
+  let lod = new THREE.LOD();
+  for (let i = 0; i < 5; i++) {
+    const geometry = new THREE.SphereBufferGeometry(1, 22 - i * 5, 22 - i * 5);
+
+    const mesh = new THREE.Mesh(geometry, material);
+
+    lod.addLevel(mesh, i * 5);
+  }
+  let mesh = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), material);
+  mesh.visible = false;
+  lod.addLevel(mesh, 25);
+  lod.position.set(10, 0, 10);
+  scene.add(lod);
+
   animate();
 });
 </script>
